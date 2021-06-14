@@ -17,6 +17,8 @@ scale = { package = "parity-scale-codec", version = "2.1", default-features = fa
 scale-info = { version = "0.6.0", default-features = false, features = ["derive"], optional = true }
 sp-core = { version = "3.0", default-features = false }
 
+ink_egld = { path = "../ink_egld", default-features = false, features = ["ink-as-dependency"]  }
+
 [lib]
 name = "freezer"
 path = "lib.rs"
@@ -37,5 +39,6 @@ std = [
     "scale-info/std",
 	"sp-core/std",
 	"bech32/std",
+	"ink_egld/std"
 ]
 ink-as-dependency = []

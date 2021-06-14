@@ -7,24 +7,29 @@ extern crate alloc;
 pub mod freezer {
     use bech32;
     use alloc::{vec::Vec, string::String};
-    use ink_storage::traits::{SpreadLayout, PackedLayout};
+    use ink_storage::{
+        lazy::Lazy,
+        traits::{SpreadLayout, PackedLayout}
+    };
     use scale::{
         Decode,
         Encode,
     };
     use ink_env::call::*;
+    use ink_egld::InkEgld;
+
     #[cfg(feature = "std")]
     use scale_info::TypeInfo;
 
     /// Contract Storage
     /// Stores a list of validators
-    #[derive(Default)]
     #[ink(storage)]
     pub struct Freezer {
         validators: ink_storage::collections::HashMap<AccountId, ()>, // O(1) contains
         // action_id: pop_info
         pop_action: ink_storage::collections::HashMap<String, ActionInfo>,
-        last_action: u128
+        last_action: u128,
+        wrapper: Lazy<InkEgld>
     }
 
     /// Transfer to elrond chain event
@@ -44,6 +49,13 @@ pub mod freezer {
         args: Vec<Vec<u8>> // TODO: Multiple Args
     }
 
+    #[ink(event)]
+    pub struct UnfreezeWrap {
+        action_id: u128,
+        to: String,
+        value: Balance
+    }
+
     #[derive(Clone, Debug, PartialEq, Encode, Decode, SpreadLayout, PackedLayout)]
     #[cfg_attr(feature = "std", derive(TypeInfo))]
     pub enum Action {
@@ -56,6 +68,10 @@ pub mod freezer {
             value: Balance,
             endpoint: [u8; 4],
             args: Option<u32>
+        },
+        SendWrapped {
+            to: AccountId,
+            value: Balance
         }
     }
 
@@ -76,22 +92,31 @@ pub mod freezer {
         }
     }
 
+    impl Eq for ActionInfo {}
+
     // Hack
+    // we don't really need this
     impl Default for ActionInfo {
         fn default() -> Self {
             unimplemented!()
         }
     }
 
-    impl Eq for ActionInfo {}
-
     impl Freezer {
         #[ink(constructor)]
-        pub fn default() -> Self {
+        pub fn new(version: u32, erc20_code: Hash) -> Self {
+            let wrapper = InkEgld::new(1000)
+                .endowment(Self::env().balance()/2)
+                .code_hash(erc20_code)
+                .salt_bytes(version.to_le_bytes())
+                .instantiate()
+                .expect("Failed to create ERC20 token!");
+
             Self { 
                 validators: Default::default(),
                 pop_action: Default::default(),
-                last_action: 0
+                last_action: 0,
+                wrapper: Lazy::new(wrapper)
             }
         }
 
@@ -110,6 +135,27 @@ pub mod freezer {
                 action_id: self.last_action,
                 to,
                 value: val,
+            } )
+        }
+
+        /// Burn erc20 token & emit event
+        #[ink(message)]
+        pub fn withdraw_wrapper(&mut self, to: String, value: Balance) {
+            bech32::decode(&to).expect("Invalid address!");
+            if value <= 0 {
+                panic!("Value must be > 0!");
+            }
+
+            let caller = self.env().caller();
+            if self.wrapper.burn(value, caller).is_err() {
+                panic!("Failed to burn coins!");
+            }
+
+            self.last_action += 1;
+            self.env().emit_event( UnfreezeWrap {
+                action_id: self.last_action,
+                to,
+                value
             } )
         }
 
@@ -153,6 +199,9 @@ pub mod freezer {
                                 .params()
                         ).unwrap();
                     }
+                },
+                Action::SendWrapped { to, value } => {
+                    self.wrapper.mint(value, to).unwrap();
                 }
             }
         }
@@ -192,7 +241,13 @@ pub mod freezer {
             self.verify_action(action_id, Action::RpcCall { to, value, endpoint, args })
         }
 
+        #[ink(message)]
+        pub fn send_wrapper_verify(&mut self, action_id: String, to: AccountId, value: Balance) {
+            self.verify_action(action_id, Action::SendWrapped { to, value });
+        }
+
         /// Subscribe to events & become a validator
+        /// Placeholder for now
         /// TODO: Proper implementation
         #[ink(message)]
         pub fn subscribe(&mut self) {
