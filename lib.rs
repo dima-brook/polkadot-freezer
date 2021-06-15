@@ -8,15 +8,13 @@ pub mod freezer {
     use bech32;
     use alloc::{vec::Vec, string::String};
     use ink_storage::{
-        lazy::Lazy,
         traits::{SpreadLayout, PackedLayout}
     };
     use scale::{
         Decode,
         Encode,
     };
-    use ink_env::call::*;
-    use ink_egld::InkEgld;
+    use ink_env::call::{*};
 
     #[cfg(feature = "std")]
     use scale_info::TypeInfo;
@@ -29,7 +27,7 @@ pub mod freezer {
         // action_id: pop_info
         pop_action: ink_storage::collections::HashMap<String, ActionInfo>,
         last_action: u128,
-        wrapper: Lazy<InkEgld>
+        wrapper: AccountId
     }
 
     /// Transfer to elrond chain event
@@ -104,19 +102,12 @@ pub mod freezer {
 
     impl Freezer {
         #[ink(constructor)]
-        pub fn new(version: u32, erc20_code: Hash) -> Self {
-            let wrapper = InkEgld::new(1000)
-                .endowment(Self::env().balance()/2)
-                .code_hash(erc20_code)
-                .salt_bytes(version.to_le_bytes())
-                .instantiate()
-                .expect("Failed to create ERC20 token!");
-
+        pub fn new(erc20_addr: AccountId) -> Self {
             Self { 
                 validators: Default::default(),
                 pop_action: Default::default(),
                 last_action: 0,
-                wrapper: Lazy::new(wrapper)
+                wrapper: erc20_addr
             }
         }
 
@@ -138,6 +129,36 @@ pub mod freezer {
             } )
         }
 
+        fn erc20_burn(&self, acc: AccountId, value: Balance) {
+            self.env().invoke_contract(
+                &build_call()
+                    .callee(self.wrapper)
+                    .transferred_value(0)
+                    .exec_input(
+                        ExecutionInput::new(Selector::new([0xB0, 0xF9, 0xC0, 0x19]))
+                            .push_arg(value)
+                            .push_arg(acc)
+                    )
+                    .returns::<()>()
+                    .params()
+            ).expect("Failed to burn coins!");
+        }
+
+        fn erc20_mint(&self, acc: AccountId, value: Balance) {
+            self.env().invoke_contract(
+                &build_call()
+                    .callee(self.wrapper)
+                    .transferred_value(0)
+                    .exec_input(
+                        ExecutionInput::new(Selector::new([0x31, 0x91, 0xC0, 0x19]))
+                            .push_arg(value)
+                            .push_arg(acc)
+                    )
+                    .returns::<()>()
+                    .params()
+            ).expect("Failed to mint coins!");
+        }
+
         /// Burn erc20 token & emit event
         #[ink(message)]
         pub fn withdraw_wrapper(&mut self, to: String, value: Balance) {
@@ -147,10 +168,8 @@ pub mod freezer {
             }
 
             let caller = self.env().caller();
-            if self.wrapper.burn(value, caller).is_err() {
-                panic!("Failed to burn coins!");
-            }
 
+            self.erc20_burn(caller, value);
             self.last_action += 1;
             self.env().emit_event( UnfreezeWrap {
                 action_id: self.last_action,
@@ -201,7 +220,7 @@ pub mod freezer {
                     }
                 },
                 Action::SendWrapped { to, value } => {
-                    self.wrapper.mint(value, to).unwrap();
+                    self.erc20_mint(to, value);
                 }
             }
         }
