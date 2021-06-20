@@ -15,6 +15,7 @@ pub mod freezer {
         Encode,
     };
     use ink_env::call::{*};
+    use ink_prelude::format;
 
     #[cfg(feature = "std")]
     use scale_info::TypeInfo;
