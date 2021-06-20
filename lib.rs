@@ -5,7 +5,7 @@ extern crate alloc;
 
 #[ink::contract]
 pub mod freezer {
-    use bech32;
+    use sp_core::H160;
     use alloc::{vec::Vec, string::String};
     use ink_storage::{
         traits::{SpreadLayout, PackedLayout}
@@ -115,8 +115,9 @@ pub mod freezer {
         /// existing coins
         #[ink(message)]
         #[ink(payable)]
-        pub fn send(&mut self, to: String) {
-            bech32::decode(&to).expect("Invalid address!");
+        pub fn send(&mut self, to: [u8; 20]) {
+            let addr = H160::from_slice(&to);
+
             let val = self.env().transferred_balance();
             if val == 0 {
                 panic!("Value must be > 0!")
@@ -124,7 +125,7 @@ pub mod freezer {
             self.last_action += 1;
             self.env().emit_event( Transfer {
                 action_id: self.last_action,
-                to,
+                to: format!("0x{:020x}", addr),
                 value: val,
             } )
         }
@@ -161,8 +162,9 @@ pub mod freezer {
 
         /// Burn erc20 token & emit event
         #[ink(message)]
-        pub fn withdraw_wrapper(&mut self, to: String, value: Balance) {
-            bech32::decode(&to).expect("Invalid address!");
+        pub fn withdraw_wrapper(&mut self, to: [u8; 20], value: Balance) {
+            let addr = H160::from_slice(&to);
+
             if value <= 0 {
                 panic!("Value must be > 0!");
             }
@@ -173,22 +175,8 @@ pub mod freezer {
             self.last_action += 1;
             self.env().emit_event( UnfreezeWrap {
                 action_id: self.last_action,
-                to,
+                to: format!("0x{:020x}", addr),
                 value
-            } )
-        }
-
-        /// Emit an SCCall event
-        /// TODO: Charge some token amount for this
-        #[ink(message)]
-        pub fn send_sc_call(&mut self, target_contract: String, endpoint: String, args: Vec<Vec<u8>>) {
-            bech32::decode(&target_contract).expect("Invalid address!");
-            self.last_action += 1;
-            self.env().emit_event( ScCall {
-                action_id: self.last_action,
-                to: target_contract,
-                endpoint,
-                args
             } )
         }
 
