@@ -17,7 +17,7 @@ scale = { package = "parity-scale-codec", version = "2.1", default-features = fa
 scale-info = { version = "0.6.0", default-features = false, features = ["derive"], optional = true }
 sp-core = { version = "3.0", default-features = false }
 
-wrap_token = { git = "https://github.com/xp-network/polkadot-wraptoken", default-features = false, features = ["ink-as-dependency"]  }
+erc20 = { git = "https://github.com/xp-network/polkadot-wraptoken", default-features = false, features = ["ink-as-dependency"]  }
 
 [lib]
 name = "freezer"
@@ -39,6 +39,6 @@ std = [
     "scale-info/std",
 	"sp-core/std",
 	"bech32/std",
-	"wrap_token/std"
+	"erc20/std"
 ]
 ink-as-dependency = []
